@@ -1,0 +1,21 @@
+# Core FastAPI
+fastapi
+uvicorn[standard]
+
+# Database
+sqlalchemy
+psycopg2-binary
+
+# HTTP & Config
+requests
+python-dotenv
+pydantic-settings
+
+# Vector DB & Embeddings
+chromadb>=0.4.0
+sentence-transformers
+
+# LLM providers
+google-generativeai
+openai
+anthropic

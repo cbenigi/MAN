@@ -1,0 +1,6 @@
+prefect
+polars  
+psycopg2-binary
+pgvector
+numpy
+pandas

@@ -1,0 +1,8 @@
+prefect
+polars
+psycopg2-binary
+numpy
+pandas
+sentence-transformers
+chromadb
+python-dotenv

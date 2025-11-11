@@ -1,0 +1,119 @@
+version: '3.8'
+
+# ==============================================================================
+# MANBANK - Docker Compose Configuration
+# ==============================================================================
+# 
+# MODO DESARROLLO LOCAL (recomendado):
+#   docker compose up
+#   Levanta: Postgres + ChromaDB + Backend (con Gemini API)
+#   Solo el Frontend corre localmente con: npm run dev
+#
+# MODO COMPLETO (para deploy/testing):
+#   docker compose --profile full up
+#   Levanta TODO incluyendo frontend y ETL dockerizados
+#
+# Nota: Requiere GOOGLE_API_KEY en archivo .env
+# ==============================================================================
+
+services:
+  # =============================================================================
+  # INFRAESTRUCTURA (siempre se levanta)
+  # =============================================================================
+  
+  postgres:
+    image: postgres:15
+    container_name: manbank-postgres
+    environment:
+      POSTGRES_DB: manbank
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./schema.sql:/docker-entrypoint-initdb.d/02-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d manbank"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: manbank-chromadb
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8000:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # BACKEND (siempre se levanta)
+  # =============================================================================
+  
+  fastapi:
+    build: ../backend
+    container_name: manbank-backend
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/manbank
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - MODEL_PROVIDER=gemini
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =============================================================================
+  # FRONTEND Y ETL (solo con --profile full)
+  # =============================================================================
+
+  nextjs:
+    profiles: ["full"]
+    build: ../frontend
+    container_name: manbank-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
+  etl:
+    profiles: ["full"]
+    build: ../etl
+    container_name: manbank-etl
+    command: tail -f /dev/null  # Keep container running for manual ETL execution
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/manbank
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - ./data:/data  # Mount data directory for CSV/Excel files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  chroma_data:
